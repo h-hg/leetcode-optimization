@@ -3,8 +3,8 @@
 // @namespace    http://tampermonkey.net/
 // @homepageURL   https://github.com/h-hg/leetcode-optimization
 // @supportURL    https://github.com/h-hg/leetcode-optimization/issues
-// @version      0.1.1
-// @description  禁英文站跳中文站，增加中英站互跳按钮，中文站剪切板净化，删除中英站一些广告
+// @version      0.2.0
+// @description  禁英文站跳中文站，增加中英站互跳按钮，删除中英站一些广告，复制题解与描述
 // @author       Hunter Hwang
 // @license      MIT
 // @match        https://leetcode.com/*
@@ -16,17 +16,16 @@
 // @grant        GM_webRequest
 // ==/UserScript==
 
-(function() {
+(function () {
   'use strict';
-  function handleCopy(e) {
-    e.stopPropagation();
-    const copytext = window.getSelection();
-    const clipdata = e.clipboardData || window.clipboardData;
- 
-    if (clipdata) {
-      clipdata.setData("Text", copytext);
-    }
-  }
+  // function handleCopy(e) {
+  //   e.stopPropagation();
+  //   const copytext = window.getSelection();
+  //   const clipdata = e.clipboardData || window.clipboardData;
+  //   if (clipdata) {
+  //     clipdata.setData("Text", copytext);
+  //   }
+  // }
   /**
    * @link https://stackoverflow.com/questions/22125865/wait-until-flag-true
    */
@@ -37,6 +36,10 @@
       callback();
     }
   }
+  function isLoadFinish() {
+    var tag = isCNSite() ? 'nav' : 'img';
+    return document.querySelector(tag) != null;
+  }
   function isCNSite() {
     return location.hostname === 'leetcode.cn'
   }
@@ -44,34 +47,352 @@
     var tmp = location.href.match(/problems\/([^\/]+)/);
     return (tmp != null && tmp[1] != 'all') ? tmp[1] : null;
   }
-  function hasProblemId() {
-    var tag = isCNSite() ? 'h4[data-cypress="QuestionTitle"] a' : 'div[data-cy="question-title"]';
-    return document.querySelector(tag) != null;
+  function copyCnSolution(callback) {
+    // example: https://leetcode.cn/problems/number-of-matching-subsequences/solutions/1973995/pi-pei-zi-xu-lie-de-dan-ci-shu-by-leetco-vki7/
+    var match = location.href.match(/problems\/[^\/]+\/solutions\/[^\/]+\/([^\/]+)/);
+    if (match == null)
+      return;
+    const data = JSON.stringify({
+      "query": `query discussTopic($slug: String) {
+      solutionArticle(slug: $slug, orderBy: DEFAULT) {
+        ...solutionArticle
+        content
+        next {
+          slug
+          title
+        }
+        prev {
+          slug
+          title
+        }
+      }
+    }
+
+    fragment solutionArticle on SolutionArticleNode {
+      ipRegion
+      rewardEnabled
+      canEditReward
+      uuid
+      title
+      slug
+      sunk
+      chargeType
+      status
+      identifier
+      canEdit
+      canSee
+      reactionType
+      reactionsV2 {
+        count
+        reactionType
+        }
+      tags {
+        name
+        nameTranslated
+        slug
+        tagType
+      }
+      createdAt
+      thumbnail
+      author {
+        username
+        isDiscussAdmin
+        isDiscussStaff
+        profile {
+          userAvatar
+          userSlug
+          realName
+          reputation
+        }
+      }
+      summary
+      topic {
+        id
+        subscribed
+        commentCount
+        viewCount
+        post {
+          id
+          status
+          voteStatus
+          isOwnPost
+        }
+      }
+      byLeetcode
+      isMyFavorite
+      isMostPopular
+      favoriteCount
+      isEditorsPick
+      hitCount
+      videosInfo {
+        videoId
+        coverUrl
+        duration
+      }
+    }`,
+      "variables": {
+        "slug": match[1],
+      }
+    });
+    const response = fetch(
+      'https://leetcode.cn/graphql/',
+      {
+        method: 'post',
+        body: data,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+        },
+      }
+    );
+    response.then(res => res.json()).then(d => {
+      navigator.clipboard.writeText(d.data.solutionArticle.content)
+    })
   }
-  function getProblemId() {
-    var tag = isCNSite() ? 'h4[data-cypress="QuestionTitle"] a' : 'div[data-cy="question-title"]';
-    return document.querySelector(tag).textContent.match('([0-9]+)')[1];
+  function copyEnsolution() {
+    // example: https://leetcode.com/problems/median-of-two-sorted-arrays/discuss/2799909/Python-or-Easy-Solution
+    var match = location.href.match(/problems\/[^\/]+\/discuss\/([^\/]+)\/[^\/]+/);
+    if (match == null)
+      return;
+    const data = JSON.stringify({
+    "operationName":"DiscussTopic",
+    "variables":{
+      "topicId": parseInt(match[1]),
+    },
+    "query":`query DiscussTopic($topicId: Int!) {
+      topic(id: $topicId) {
+        id
+        viewCount
+        topLevelCommentCount
+        subscribed
+        title
+        pinned
+        tags
+        hideFromTrending
+        post {
+          ...DiscussPost
+          __typename
+        }
+        __typename
+      }
+    }
+
+    fragment DiscussPost on PostNode {
+      id
+      voteCount
+      voteStatus
+      content
+      updationDate
+      creationDate
+      status
+      isHidden
+      coinRewards {
+        ...CoinReward
+        __typename
+      }
+      author {
+        isDiscussAdmin
+        isDiscussStaff
+        username
+        nameColor
+        activeBadge {
+          displayName
+          icon
+          __typename
+        }
+        profile {
+          userAvatar
+          reputation
+          __typename
+        }
+        isActive
+        __typename
+      }
+      authorIsModerator
+      isOwnPost
+      __typename
+    }
+
+    fragment CoinReward on ScoreNode {
+      id
+      score
+      description
+      date
+      __typename
+    }`});
+    const response = fetch(
+      'https://leetcode.com/graphql/',
+      {
+        method: 'post',
+        body: data,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+        },
+      }
+    );
+    response.then(res => res.json()).then(d => {
+      navigator.clipboard.writeText(d.data.topic.post.content.replaceAll('\\n', '\n'))
+    })
   }
-  function getOthterLangUrl() {
+  function copySolution() {
+    if (isCNSite())
+      copyCnSolution();
+    else
+      copyEnsolution();
+  }
+  function copyCnDescription() {
+    // example: https://leetcode.cn/problems/number-of-matching-subsequences/description/
+    var match = location.href.match(/problems\/([^\/]+)\//);
+    if (match == null)
+      return;
+    const data = JSON.stringify({
+      "query": `query questionTranslations($titleSlug: String!) {
+      question(titleSlug: $titleSlug) {
+        translatedTitle
+        translatedContent
+      }
+    }`,
+      "variables": {
+        "titleSlug": "number-of-matching-subsequences"
+      }
+    });
+    const response = fetch(
+      'https://leetcode.cn/graphql/',
+      {
+        method: 'post',
+        body: data,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+        },
+      }
+    );
+    response.then(res => res.json()).then(d => {
+      navigator.clipboard.writeText(d.data.question.translatedContent)
+    })
+  }
+  function copyEnDescription() {
+    var match = location.href.match(/problems\/([^\/]+)\//);
+    if (match == null)
+      return;
+    const data = JSON.stringify({
+      "operationName": "questionData",
+      "variables": {
+        "titleSlug": match[1],
+      },
+      "query": `query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+          questionId
+          questionFrontendId
+          boundTopicId
+          title
+          titleSlug
+          content
+          translatedTitle
+          translatedContent
+          isPaidOnly
+          canSeeQuestion
+          difficulty
+          likes
+          dislikes
+          isLiked
+          similarQuestions
+          exampleTestcases
+          categoryTitle
+          contributors {
+            username
+            profileUrl
+            avatarUrl
+            __typename
+          }
+          topicTags {
+            name
+            slug
+            translatedName
+            __typename
+          }
+          companyTagStats
+          codeSnippets {
+            lang
+            langSlug
+            code
+            __typename
+          }
+          stats
+          hints
+          solution {
+            id
+            canSeeDetail
+            paidOnly
+            hasVideoSolution
+            paidOnlyVideo
+            __typename
+          }
+          status
+          sampleTestCase
+          metaData
+          judgerAvailable
+          judgeType
+          mysqlSchemas
+          enableRunCode
+          enableTestMode
+          enableDebugger
+          envInfo
+          libraryUrl
+          adminUrl
+          challengeQuestion {
+            id
+            date
+            incompleteChallengeCount
+            streakCount
+            type
+            __typename
+          }
+          __typename
+      }
+      }`
+    });
+    const response = fetch(
+      'https://leetcode.com/graphql/',
+      {
+        method: 'post',
+        body: data,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+        },
+      }
+    );
+    response.then(res => res.json()).then(d => {
+      navigator.clipboard.writeText(d.data.question.content);
+    })
+  }
+  function copyDescription() {
+    if(isCNSite())
+      copyCnDescription();
+    else
+      copyEnDescription();
+  }
+  function getOtherLangUrl() {
     var matchRes = location.href.match(/problems\/([^\/]+)\/?([a-z]+)?/);
-    if(matchRes == null || matchRes[1] == 'all')
+    if (matchRes == null || matchRes[1] == 'all')
       return null;
     var problemName = matchRes[1], tab = matchRes[2];
 
-    if(tab == 'discuss') {
+    if (tab == 'discuss') {
       tab = 'comments';
-    } else if(tab == 'comments') {
+    } else if (tab == 'comments') {
       tab = 'discuss';
-    } else if(tab == 'submissions' || tab == 'solution') {
+    } else if (tab == 'submissions' || tab == 'solution') {
     } else {
       tab = '';
     }
-
-    return `https://leetcode${isCNSite() ? '' : '-cn'}.com/problems/${problemName}/${tab}`
+    return `https://leetcode${isCNSite() ? '.com' : '.cn'}/problems/${problemName}/${tab}`
   }
   function banAutoJump2Cn() {
     GM_webRequest([
-      {selector: 'https://assets.leetcode.cn/*', action: 'cancel'},
+      { selector: 'https://assets.leetcode.cn/*', action: 'cancel' },
     ], function (info, message, details) {
       console.log(info, message, details);
     });
@@ -81,14 +402,6 @@
     html = html.trim(); // Never return a text node of whitespace as the result
     template.innerHTML = html;
     return template.content.firstChild;
-  }
-  function getMenuItems() {
-      var name = getProblemName(), id = getProblemId();
-      return {
-        [isCNSite() ? 'English' : '中文'] : getOthterLangUrl(),
-        'labuladong': `https://labuladong.github.io/article/?qno=${id}`,
-         '九章算法': `https://www.jiuzhang.com/solution/${name}`,
-      }
   }
   function createBall() {
     // add css
@@ -122,13 +435,20 @@
       .leetcode-wrapper:hover .menu {
         display: block;
       }
-      .leetcode-wrapper .menu a {
+      .leetcode-wrapper .menu a,
+      .leetcode-wrapper .menu button {
         color: black;
         padding: 12px 16px;
         text-decoration: none;
         display: block;
+        border: none;
+        text-align: center;
+        background-color: transparent;
+        cursor: pointer;
+        width: 100%;
       }
-      .leetcode-wrapper .menu a:hover {
+      .leetcode-wrapper .menu a:hover,
+      .leetcode-wrapper .menu button:hover {
         background-color: #f1f1f1
       }
     `);
@@ -143,29 +463,39 @@
       </div>
     `);
     var menu = wrapper.querySelector('.menu');
-    waitFor(hasProblemId, () => {
-      var items = getMenuItems();
-      for(var key in items) {
-        var link = document.createElement('a');
-        link.appendChild(document.createTextNode(key));
-        link.href = items[key];
-        link.target = '_blank';
-        menu.appendChild(link);
-      }
+    waitFor(isLoadFinish, () => {
+      // switch to other language
+      var link = document.createElement('a');
+      link.target = '_blank';
+      link.appendChild(document.createTextNode(isCNSite() ? 'English' : '中文'));
+      link.href = getOtherLangUrl();
+      menu.appendChild(link);
+      // copy solution
+      var b1 = document.createElement('button')
+      b1.textContent = isCNSite() ? '复制题解' : 'Copy discuss';
+      b1.onclick = copySolution;
+      menu.appendChild(b1)
+      // copy problem description
+      var b2 = document.createElement('button')
+      b2.textContent = isCNSite() ? '复制描述' : 'Copy description';
+      b2.onclick = copyDescription;
+      menu.appendChild(b2)
+
       document.body.appendChild(wrapper);
       var btn = document.getElementById('leetcode-btn');
-      btn.addEventListener('mouseenter', function(e){
-        menu.firstElementChild.href = getOthterLangUrl();
+      btn.addEventListener('mouseenter', function (e) {
+        menu.firstElementChild.href = getOtherLangUrl();
+        // TODO
       })
     })
   }
   // prevent auto jump to leetcode.cn
-  if(!isCNSite()) {
+  if (!isCNSite()) {
     banAutoJump2Cn();
   }
 
   // AD
-  if(isCNSite()) {
+  if (isCNSite()) {
 
   } else {
     GM_addStyle(`
@@ -185,8 +515,8 @@
 
   // problems navigator
   let problemName = getProblemName();
-  if(problemName != null) {
+  if (problemName != null) {
     createBall();
   }
-  document.addEventListener("copy", handleCopy, true);
+  // document.addEventListener("copy", handleCopy, true);
 })();
